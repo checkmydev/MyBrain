@@ -392,8 +392,10 @@ function demarrer(D) {
       <div><h3>${i.source === 'carnet' ? 'Expériences qui la nourrissent' : 'Projets dont elle est tirée'}</h3><ul class="items">${projs.map(x => `<li><div class="linkrow">${projBtn(x.p)}<span class="chip plain">${x.poids === 3 ? 'central' : x.poids === 1 ? 'secondaire' : 'brique'}</span></div><small><b>${esc(x.usage)}</b></small><small>${esc(projById[x.p]?.contexte || projById[x.p]?.resume)}</small></li>`).join('')}</ul></div>
       ${i.questions?.length ? `<div><h3>Questions ouvertes</h3><ul class="steps qs">${i.questions.map(q => `<li>${esc(q)}</li>`).join('')}</ul></div>` : ''}
       ${i.construire?.length ? `<div><h3>À construire</h3><ul class="steps">${i.construire.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
-      ${i.etapes?.length ? `<div><h3>Prochaines étapes</h3><ul class="steps">${i.etapes.map(e => `<li class="${e.fait ? 'done' : ''}">${esc(e.t)}</li>`).join('')}</ul></div>` : ''}`;
+      ${i.etapes?.length ? `<div><h3>Prochaines étapes</h3><ul class="steps">${i.etapes.map(e => `<li class="${e.fait ? 'done' : ''}">${esc(e.t)}</li>`).join('')}</ul></div>` : ''}
+      <div class="memoire-liee" data-cle="idee:${i.id}"></div>`;
     detail.scrollTop = 0;
+    window.memoireLiee?.(detail.querySelector('.memoire-liee'));
   }
 
   function showLien(key) {
@@ -427,8 +429,10 @@ function demarrer(D) {
       <p>${esc(s.pitch)}</p>
       <div><h3>Idées qui convergent</h3><ul class="items">${ids.map(i => `<li>${ideaBtn(i.id)} · force ${forces[i.id]}<small>${esc(i.pitch)}</small></li>`).join('')}</ul></div>
       ${inner.length ? `<div><h3>Chemins internes</h3><ul class="items">${inner.map(l => `<li><button class="linklike" data-lien="${l.key}">${l.de} ↔ ${l.a}</button> ${typeChip(l.type)} · force ${l.force.toFixed(1)}<small>${esc(l.nature)}</small></li>`).join('')}</ul></div>` : ''}
-      <div><h3>Expériences déjà acquises</h3><p>${projs.map(projBtn).join(' · ')}</p></div>`;
+      <div><h3>Expériences déjà acquises</h3><p>${projs.map(projBtn).join(' · ')}</p></div>
+      <div class="memoire-liee" data-cle="solution:${s.id}"></div>`;
     detail.scrollTop = 0;
+    window.memoireLiee?.(detail.querySelector('.memoire-liee'));
   }
 
   function showTheme(k) {
@@ -453,8 +457,10 @@ function demarrer(D) {
       ${p.contexte ? `<div><h3>Ce qui a été fait</h3><p class="ctx">${esc(p.contexte)}</p></div>` : ''}
       ${p.lecons?.length ? `<div><h3>Leçons</h3><ul class="steps lecons">${p.lecons.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
       <div><h3>Idées qu'elle nourrit (${users.length})</h3><ul class="items">${users.map(i => `<li>${ideaBtn(i.id)}<small>${esc(i.projets.find(x => x.p === pid).usage)}</small></li>`).join('') || '<li>Aucune pour l\'instant</li>'}</ul></div>
+      <div class="memoire-liee" data-cle="projet:${pid}"></div>
       ${exps.length ? `<div><h3>Expériences liées</h3><ul class="items">${exps.map(l => `<li>${projBtn(l.de === pid ? l.a : l.de)}<small>${esc(projById[l.de].nom)} ${esc(l.nature)} ${esc(projById[l.a].nom)}</small></li>`).join('')}</ul></div>` : ''}`;
     detail.scrollTop = 0;
+    window.memoireLiee?.(detail.querySelector('.memoire-liee'));
   }
 
   function showJournal(jid) {
@@ -861,6 +867,32 @@ function demarrer(D) {
   showHome();
 }
 
+// ---------- RAG (site connecté uniquement) ----------
+let extracteur = null;
+window.vectoriserQuestion = async q => {
+  if (!extracteur) {
+    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+    extracteur = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small', { dtype: 'q8' });
+  }
+  const out = await extracteur('query: ' + q, { pooling: 'mean', normalize: true });
+  return '[' + Array.from(out.data).map(x => x.toFixed(5)).join(',') + ']';
+};
+function activerMemoireLiee(sb) {
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  window.memoireLiee = async el => {
+    if (!el) return;
+    el.innerHTML = '<h3>Mémoire liée</h3><p class="hint">Recherche des échanges proches…</p>';
+    const r = await sb.schema('brain').rpc('memoire_proche', { cle_noeud: el.dataset.cle, n: 40 });
+    if (r.error) { el.innerHTML = '<h3>Mémoire liée</h3><p class="hint">Indisponible.</p>'; return; }
+    const vus = new Map();
+    r.data.forEach(x => { if (!vus.has(x.trace_id)) vus.set(x.trace_id, x); });
+    const top = [...vus.values()].slice(0, 8);
+    if (!top.length) { el.innerHTML = '<h3>Mémoire liée</h3><p class="hint">Aucun échange vectorisé pour l\'instant.</p>'; return; }
+    const lien = x => x.source_id === 'outlook-agilos' ? `https://outlook.office365.com/owa/?ItemID=${encodeURIComponent(x.ref_source)}&exvsurl=1&viewmodel=ReadMessageItem` : `https://mail.google.com/mail/#all/${encodeURIComponent(x.ref_source)}`;
+    el.innerHTML = `<h3>Mémoire liée (par le sens)</h3><ul class="items">${top.map(x => `<li><a class="linklike" href="${lien(x)}" target="_blank" rel="noopener">${esc(x.titre || '(sans sujet)')}</a> · ${Math.round(x.score * 100)} %<small>${esc(new Date(x.date).toLocaleDateString('fr-BE'))} · ${esc(x.fragment.slice(0, 180))}…</small></li>`).join('')}</ul>`;
+  };
+}
+
 // ---------- Mémoire (site connecté uniquement) ----------
 async function memoire(sb) {
   const v = document.getElementById('view-memoire');
@@ -870,6 +902,7 @@ async function memoire(sb) {
   const jour = d => d ? new Date(d).toLocaleDateString('fr-BE', { year:'numeric', month:'short', day:'numeric' }) : '';
   v.innerHTML = `<div class="mem-head"><h2>Mémoire</h2><span class="hint" id="mem-stats">Chargement…</span></div>
     <div class="filters"><label class="lbl" for="mem-q">Chercher</label><input id="mem-q" type="search" placeholder="Personne ou organisation" style="flex:1 1 220px;max-width:360px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:12px;padding:8px 12px;font:500 14px var(--font)"></div>
+    <form class="filters" id="mem-sem-form"><label class="lbl" for="mem-sem">Par le sens</label><input id="mem-sem" type="search" placeholder="Pose une question : « problèmes de licences Qlik chez un client »" style="flex:1 1 320px;max-width:560px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:12px;padding:8px 12px;font:500 14px var(--font)"><button class="btn-ghost" type="submit">Chercher</button><span class="hint" id="mem-sem-msg"></span></form>
     <div class="mem-grid">
       <div class="panel mem-col"><h3>Organisations</h3><ul class="items" id="mem-orgs"></ul></div>
       <div class="panel mem-col"><h3>Personnes</h3><ul class="items" id="mem-pers"></ul></div>
@@ -941,6 +974,22 @@ async function memoire(sb) {
     else await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('trace_personnes').select('traces(id,source_id,ref_source,date,sens,titre,resume,pieces_jointes,organisation_id)').eq('personne_id', li.dataset.pers).limit(500))
       .map(x => x.traces).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date)));
   });
+  document.getElementById('mem-sem-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const q = document.getElementById('mem-sem').value.trim(); if (!q) return;
+    const msg = document.getElementById('mem-sem-msg');
+    msg.textContent = 'Préparation du modèle (la première fois, téléchargement d\'environ 120 Mo)…';
+    try {
+      const v = await window.vectoriserQuestion(q);
+      msg.textContent = '';
+      await fil(`Par le sens : « ${q} »`, async () => {
+        const rows = ok(await m.rpc('chercher', { q: v, n: 60 }));
+        const vus = new Map();
+        rows.forEach(r => { if (!vus.has(r.trace_id)) vus.set(r.trace_id, { id: r.trace_id, date: r.date, sens: r.sens, titre: r.titre, source_id: r.source_id, ref_source: r.ref_source, organisation_id: r.organisation_id, resume: `${Math.round(r.score * 100)} % · ${r.fragment.slice(0, 220)}…`, pieces_jointes: [] }); });
+        return [...vus.values()];
+      });
+    } catch (err) { msg.textContent = 'Recherche impossible : ' + (err.message || err); }
+  });
   let tempo;
   document.getElementById('mem-q').addEventListener('input', e => { clearTimeout(tempo); tempo = setTimeout(() => listes(e.target.value.trim()), 300); });
   await Promise.all([listes(''), derniers()]);
@@ -997,6 +1046,7 @@ async function memoire(sb) {
       demarrer(D);
       document.getElementById('tab-memoire').hidden = false;
       window.ouvrirMemoire = () => memoire(sb);
+      activerMemoireLiee(sb);
     } catch (err) {
       login.hidden = false;
       msg.textContent = "Connecté, mais les données ne sont pas lisibles : ce compte n'est pas propriétaire, ou le réseau n'a pas encore été importé.";
