@@ -186,6 +186,19 @@ button.card:hover { border-color:var(--line-strong); }
 .ichip { border:0; border-radius:999px; padding:3px 10px; font:600 12.5px var(--font); color:#fff; cursor:pointer; }
 .ichip.none { background:var(--surface-2); color:var(--muted); cursor:default; }
 
+.mem-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; margin-bottom:12px; }
+.mem-head h2 { margin:0; font-size:22px; }
+.mem-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr); gap:16px; align-items:start; }
+.mem-col { padding:20px 18px; display:flex; flex-direction:column; gap:10px; max-height:calc(100vh - 230px); overflow:auto; }
+.mem-col h3 { margin:0; font-size:12.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.mem-col li { cursor:pointer; }
+.mem-col li.on { outline:2px solid var(--emph); }
+.mem-col li .n { float:right; font-family:var(--mono); font-size:12px; color:var(--muted); }
+.mem-fil li { cursor:default; }
+.mem-fil .d { font-family:var(--mono); font-size:12px; color:var(--muted); }
+.sens { font-family:var(--mono); font-size:11px; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-2); color:var(--muted); }
+.sens.envoye { background:var(--info-wash); color:var(--info); }
+@media (max-width:980px) { .mem-grid { grid-template-columns:1fr; } .mem-col { max-height:none; } }
 .timeline { display:flex; flex-direction:column; gap:14px; max-width:860px; }
 .thought { display:grid; grid-template-columns:110px 1fr; gap:16px; background:var(--surface); border-radius:6px 6px 6px 24px; box-shadow:var(--shadow); padding:18px 20px; }
 .thought .when { font-family:var(--mono); font-size:12px; color:var(--muted); }
@@ -215,6 +228,7 @@ button.card:hover { border-color:var(--line-strong); }
       <button id="tab-liste" role="tab" aria-selected="false">Idées</button>
       <button id="tab-projets" role="tab" aria-selected="false">Projets</button>
       <button id="tab-pensees" role="tab" aria-selected="false">Pensées</button>
+      <button id="tab-memoire" role="tab" aria-selected="false" hidden>Mémoire</button>
     </nav>
     <div class="stats" id="stats"></div>
     <button class="btn-logout" id="logout" hidden>Se déconnecter</button>
@@ -258,6 +272,7 @@ button.card:hover { border-color:var(--line-strong); }
     <div id="projets-list"></div>
   </section>
   <section id="view-pensees" hidden></section>
+  <section id="view-memoire" hidden></section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -516,13 +531,14 @@ function demarrer(D) {
   }
 
   // ---------- Onglets et vues ----------
-  const TABS = ['carte', 'liste', 'projets', 'pensees'];
+  const TABS = ['carte', 'liste', 'projets', 'pensees', 'memoire'];
   function setTab(name) {
     for (const t of TABS) {
       document.getElementById('tab-' + t).setAttribute('aria-selected', t === name);
       document.getElementById('view-' + t).hidden = t !== name;
     }
     filters.hidden = name !== 'carte' && name !== 'liste';
+    if (name === 'memoire' && window.ouvrirMemoire) window.ouvrirMemoire();
     if (name === 'carte') { if (state.view === 'struct' && cy) cy.resize(); if (state.view === 'orga' && !org) buildOrganic(); }
   }
   TABS.forEach(t => { document.getElementById('tab-' + t).onclick = () => setTab(t); });
@@ -839,6 +855,58 @@ function demarrer(D) {
   showHome();
 }
 
+// ---------- Mémoire (site connecté uniquement) ----------
+async function memoire(sb) {
+  const v = document.getElementById('view-memoire');
+  if (v.dataset.pret) return;
+  v.dataset.pret = '1';
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const jour = d => d ? new Date(d).toLocaleDateString('fr-BE', { year:'numeric', month:'short', day:'numeric' }) : '';
+  v.innerHTML = `<div class="mem-head"><h2>Mémoire</h2><span class="hint" id="mem-stats">Chargement…</span></div>
+    <div class="filters"><label class="lbl" for="mem-q">Chercher</label><input id="mem-q" type="search" placeholder="Personne ou organisation" style="flex:1 1 220px;max-width:360px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:12px;padding:8px 12px;font:500 14px var(--font)"></div>
+    <div class="mem-grid">
+      <div class="panel mem-col"><h3>Organisations</h3><ul class="items" id="mem-orgs"></ul></div>
+      <div class="panel mem-col"><h3>Personnes</h3><ul class="items" id="mem-pers"></ul></div>
+      <div class="panel mem-col mem-fil"><h3 id="mem-fil-t">Derniers échanges</h3><ul class="items" id="mem-fil"></ul></div>
+    </div>`;
+  const m = sb.schema('memoire');
+  const ok = r => { if (r.error) throw r.error; return r.data; };
+  try {
+    const st = ok(await m.from('v_stats').select('*').single());
+    document.getElementById('mem-stats').textContent = st.traces
+      ? `${st.traces.toLocaleString('fr-BE')} échanges · ${st.personnes.toLocaleString('fr-BE')} personnes · ${st.organisations.toLocaleString('fr-BE')} organisations · du ${jour(st.debut)} au ${jour(st.fin)}`
+      : 'La mémoire est encore vide : la collecte des mails est en cours.';
+  } catch (e) { document.getElementById('mem-stats').textContent = 'Mémoire illisible pour ce compte.'; return; }
+
+  const ligneTrace = t => `<li><span class="d">${esc(jour(t.date))}</span> <span class="sens ${t.sens === 'envoye' ? 'envoye' : ''}">${t.sens === 'envoye' ? 'envoyé' : 'reçu'}</span>${esc(t.titre || '(sans sujet)')}${t.resume ? `<small>${esc(t.resume)}</small>` : ''}</li>`;
+  async function fil(titre, requete) {
+    document.getElementById('mem-fil-t').textContent = titre;
+    const ul = document.getElementById('mem-fil');
+    ul.innerHTML = '<li>Chargement…</li>';
+    const rows = await requete();
+    ul.innerHTML = rows.map(ligneTrace).join('') || '<li>Aucun échange.</li>';
+  }
+  const derniers = () => fil('Derniers échanges', async () => ok(await m.from('traces').select('date,sens,titre,resume').order('date', { ascending:false }).limit(80)));
+  async function listes(q) {
+    let qo = m.from('v_organisations').select('id,nom,nb_traces,derniere').order('nb_traces', { ascending:false }).limit(60);
+    let qp = m.from('v_personnes').select('id,nom,organisation,nb_traces,derniere_trace').order('nb_traces', { ascending:false }).limit(80);
+    if (q) { const k = `%${q.replace(/[%,()]/g, ' ')}%`; qo = qo.ilike('nom', k); qp = qp.or(`nom.ilike.${k},organisation.ilike.${k}`); }
+    const [orgs, pers] = await Promise.all([qo.then(ok), qp.then(ok)]);
+    document.getElementById('mem-orgs').innerHTML = orgs.map(o => `<li data-org="${o.id}" data-nom="${esc(o.nom)}"><span class="n">${o.nb_traces}</span><b>${esc(o.nom)}</b><small>dernier échange ${esc(jour(o.derniere))}</small></li>`).join('') || '<li>Aucune organisation.</li>';
+    document.getElementById('mem-pers').innerHTML = pers.map(p => `<li data-pers="${p.id}" data-nom="${esc(p.nom)}"><span class="n">${p.nb_traces}</span><b>${esc(p.nom)}</b><small>${esc(p.organisation || 'personnel')} · ${esc(jour(p.derniere_trace))}</small></li>`).join('') || '<li>Aucune personne.</li>';
+  }
+  v.addEventListener('click', async e => {
+    const li = e.target.closest('[data-org],[data-pers]'); if (!li) return;
+    v.querySelectorAll('.mem-col li.on').forEach(x => x.classList.remove('on')); li.classList.add('on');
+    if (li.dataset.org) await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('traces').select('date,sens,titre,resume').eq('organisation_id', li.dataset.org).order('date', { ascending:false }).limit(300)));
+    else await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('trace_personnes').select('traces(date,sens,titre,resume)').eq('personne_id', li.dataset.pers).limit(500))
+      .map(x => x.traces).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date)));
+  });
+  let tempo;
+  document.getElementById('mem-q').addEventListener('input', e => { clearTimeout(tempo); tempo = setTimeout(() => listes(e.target.value.trim()), 300); });
+  await Promise.all([listes(''), derniers()]);
+}
+
 // ---------- Démarrage : données intégrées (artefact) ou Supabase avec connexion (site MyBrain) ----------
 (function () {
   const inline = JSON.parse(document.getElementById('data').textContent || '{}');
@@ -888,6 +956,8 @@ function demarrer(D) {
       if (!D.idees.length) throw new Error('vide');
       document.getElementById('logout').hidden = false;
       demarrer(D);
+      document.getElementById('tab-memoire').hidden = false;
+      window.ouvrirMemoire = () => memoire(sb);
     } catch (err) {
       login.hidden = false;
       msg.textContent = "Connecté, mais les données ne sont pas lisibles : ce compte n'est pas propriétaire, ou le réseau n'a pas encore été importé.";
