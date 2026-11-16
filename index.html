@@ -194,7 +194,13 @@ button.card:hover { border-color:var(--line-strong); }
 .mem-col li { cursor:pointer; }
 .mem-col li.on { outline:2px solid var(--emph); }
 .mem-col li .n { float:right; font-family:var(--mono); font-size:12px; color:var(--muted); }
-.mem-fil li { cursor:default; }
+.mem-fil li { cursor:pointer; }
+.mem-fil li .tt { font-weight:600; color:var(--ink); }
+.tr-detail { margin-top:10px; padding-top:10px; border-top:1px solid var(--line-strong); cursor:default; display:flex; flex-direction:column; gap:10px; }
+.tr-dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:0; font-size:13.5px; }
+.tr-dl dt { color:var(--muted); font-weight:700; }
+.tr-dl dd { margin:0; color:var(--ink-2); word-break:break-word; }
+.tr-open { align-self:flex-start; text-decoration:none; }
 .mem-fil .d { font-family:var(--mono); font-size:12px; color:var(--muted); }
 .sens { font-family:var(--mono); font-size:11px; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-2); color:var(--muted); }
 .sens.envoye { background:var(--info-wash); color:var(--info); }
@@ -878,7 +884,38 @@ async function memoire(sb) {
       : 'La mémoire est encore vide : la collecte des mails est en cours.';
   } catch (e) { document.getElementById('mem-stats').textContent = 'Mémoire illisible pour ce compte.'; return; }
 
-  const ligneTrace = t => `<li><span class="d">${esc(jour(t.date))}</span> <span class="sens ${t.sens === 'envoye' ? 'envoye' : ''}">${t.sens === 'envoye' ? 'envoyé' : 'reçu'}</span>${esc(t.titre || '(sans sujet)')}${t.resume ? `<small>${esc(t.resume)}</small>` : ''}</li>`;
+  const traces = {};
+  const ligneTrace = t => { traces[t.id] = t; return `<li class="tr" data-trace="${t.id}"><span class="d">${esc(jour(t.date))}</span> <span class="sens ${t.sens === 'envoye' ? 'envoye' : ''}">${t.sens === 'envoye' ? 'envoyé' : 'reçu'}</span><b class="tt">${esc(t.titre || '(sans sujet)')}</b>${t.resume ? `<small>${esc(t.resume)}</small>` : ''}<div class="tr-detail" hidden></div></li>`; };
+  const { data: sess } = await sb.auth.getSession();
+  const moi = sess?.session?.user?.email || '';
+  const lienBoite = t => t.source_id === 'outlook-agilos'
+    ? { url: `https://outlook.office365.com/owa/?ItemID=${encodeURIComponent(t.ref_source)}&exvsurl=1&viewmodel=ReadMessageItem`, label: 'Ouvrir dans Outlook' }
+    : t.source_id === 'gmail-perso' ? { url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(moi)}#all/${encodeURIComponent(t.ref_source)}`, label: 'Ouvrir dans Gmail' } : null;
+  async function detailTrace(li) {
+    const box = li.querySelector('.tr-detail');
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false;
+    if (box.dataset.pret) return;
+    box.dataset.pret = '1';
+    box.innerHTML = 'Chargement…';
+    const t = traces[li.dataset.trace];
+    const [part, org] = await Promise.all([
+      m.from('trace_personnes').select('role, personnes(nom, emails)').eq('trace_id', t.id).then(ok),
+      t.organisation_id ? m.from('organisations').select('nom').eq('id', t.organisation_id).maybeSingle().then(ok) : Promise.resolve(null)]);
+    const qui = r => part.filter(x => x.role === r && x.personnes).map(x => `${esc(x.personnes.nom)} <span class="d">${esc((x.personnes.emails || [])[0] || '')}</span>`).join(', ');
+    const lien = lienBoite(t);
+    const pj = (t.pieces_jointes || []).length;
+    box.innerHTML = `<dl class="tr-dl">
+        <dt>Date</dt><dd>${esc(new Date(t.date).toLocaleString('fr-BE', { dateStyle:'full', timeStyle:'short' }))}</dd>
+        <dt>Source</dt><dd>${t.source_id === 'outlook-agilos' ? 'Outlook Agilos' : t.source_id === 'gmail-perso' ? 'Gmail perso' : esc(t.source_id)}</dd>
+        ${qui('de') ? `<dt>De</dt><dd>${qui('de')}</dd>` : `<dt>De</dt><dd>${t.sens === 'envoye' ? 'toi' : '—'}</dd>`}
+        ${qui('a') ? `<dt>À</dt><dd>${qui('a')}</dd>` : ''}
+        ${qui('cc') ? `<dt>Cc</dt><dd>${qui('cc')}</dd>` : ''}
+        ${org ? `<dt>Organisation</dt><dd>${esc(org.nom)}</dd>` : ''}
+        ${pj ? `<dt>Pièces jointes</dt><dd>oui (non lues)</dd>` : ''}
+        <dt>Résumé</dt><dd>${t.resume ? esc(t.resume) : '<span class="d">pas encore résumé</span>'}</dd>
+      </dl>${lien ? `<a class="btn-ghost tr-open" href="${lien.url}" target="_blank" rel="noopener">${lien.label} ↗</a>` : ''}`;
+  }
   async function fil(titre, requete) {
     document.getElementById('mem-fil-t').textContent = titre;
     const ul = document.getElementById('mem-fil');
@@ -886,7 +923,7 @@ async function memoire(sb) {
     const rows = await requete();
     ul.innerHTML = rows.map(ligneTrace).join('') || '<li>Aucun échange.</li>';
   }
-  const derniers = () => fil('Derniers échanges', async () => ok(await m.from('traces').select('date,sens,titre,resume').order('date', { ascending:false }).limit(80)));
+  const derniers = () => fil('Derniers échanges', async () => ok(await m.from('traces').select('id,source_id,ref_source,date,sens,titre,resume,pieces_jointes,organisation_id').order('date', { ascending:false }).limit(80)));
   async function listes(q) {
     let qo = m.from('v_organisations').select('id,nom,nb_traces,derniere').order('nb_traces', { ascending:false }).limit(60);
     let qp = m.from('v_personnes').select('id,nom,organisation,nb_traces,derniere_trace').order('nb_traces', { ascending:false }).limit(80);
@@ -896,10 +933,12 @@ async function memoire(sb) {
     document.getElementById('mem-pers').innerHTML = pers.map(p => `<li data-pers="${p.id}" data-nom="${esc(p.nom)}"><span class="n">${p.nb_traces}</span><b>${esc(p.nom)}</b><small>${esc(p.organisation || 'personnel')} · ${esc(jour(p.derniere_trace))}</small></li>`).join('') || '<li>Aucune personne.</li>';
   }
   v.addEventListener('click', async e => {
+    if (e.target.closest('.tr-open')) return;
+    const tr = e.target.closest('[data-trace]'); if (tr) { if (!e.target.closest('.tr-detail')) detailTrace(tr); return; }
     const li = e.target.closest('[data-org],[data-pers]'); if (!li) return;
     v.querySelectorAll('.mem-col li.on').forEach(x => x.classList.remove('on')); li.classList.add('on');
-    if (li.dataset.org) await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('traces').select('date,sens,titre,resume').eq('organisation_id', li.dataset.org).order('date', { ascending:false }).limit(300)));
-    else await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('trace_personnes').select('traces(date,sens,titre,resume)').eq('personne_id', li.dataset.pers).limit(500))
+    if (li.dataset.org) await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('traces').select('id,source_id,ref_source,date,sens,titre,resume,pieces_jointes,organisation_id').eq('organisation_id', li.dataset.org).order('date', { ascending:false }).limit(300)));
+    else await fil(`Échanges avec ${li.dataset.nom}`, async () => ok(await m.from('trace_personnes').select('traces(id,source_id,ref_source,date,sens,titre,resume,pieces_jointes,organisation_id)').eq('personne_id', li.dataset.pers).limit(500))
       .map(x => x.traces).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date)));
   });
   let tempo;
