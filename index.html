@@ -64,7 +64,7 @@ button { font-family:inherit; }
 
 .topbar { position:sticky; top:env(safe-area-inset-top,0px); z-index:5; background:var(--navy); color:#fff;
   padding-block:14px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); }
-.topbar-in { max-width:1320px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:12px 28px; }
+.topbar-in { max-width:1900px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:12px 28px; }
 .brand { font-size:22px; font-weight:700; letter-spacing:-.01em; }
 .brand i { font-style:normal; color:var(--cyan); }
 .brand small { display:block; font-size:12px; font-weight:400; color:#b9bbe0; letter-spacing:0; }
@@ -75,7 +75,7 @@ button { font-family:inherit; }
 .stats { margin-left:auto; display:flex; flex-wrap:wrap; gap:6px 18px; font-family:var(--mono); font-size:12px; color:#b9bbe0; text-transform:uppercase; letter-spacing:.06em; }
 .stats b { color:#fff; font-size:16px; margin-right:5px; }
 
-.wrap { max-width:1320px; margin:0 auto; padding-block:22px 40px;
+.wrap { max-width:1900px; margin:0 auto; padding-block:14px 28px;
   padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); }
 .eyebrow { font-family:var(--mono); font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--emph); }
 
@@ -91,14 +91,17 @@ button { font-family:inherit; }
 .sep { width:1px; height:22px; background:var(--line-strong); margin:0 6px; }
 #q { flex:1 1 220px; max-width:360px; border:1.5px solid var(--line-strong); background:var(--surface); color:var(--ink); border-radius:var(--r); padding:8px 12px; font:500 14px var(--font); }
 
-.board { display:grid; grid-template-columns:minmax(0,1fr) 420px; gap:20px; align-items:start; }
+.board { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:16px; align-items:start; }
+.board.wide { grid-template-columns:minmax(0,1fr); }
+.board.wide .detail { display:none; }
 .panel { background:var(--surface); border-radius:var(--r-card); box-shadow:var(--shadow); min-width:0; }
 .graph-panel { position:relative; overflow:hidden; }
-.viewbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:16px 22px 0 34px; }
+.viewbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:14px 22px 0 34px; }
+.viewbar #toggle-fiche { margin-left:auto; }
 .seg { display:inline-flex; border:1.5px solid var(--line-strong); border-radius:999px; overflow:hidden; }
 .seg button { border:0; background:var(--surface); color:var(--ink-2); padding:6px 14px; font:600 13.5px var(--font); cursor:pointer; }
 .seg button[aria-pressed="true"] { background:var(--navy); color:#fff; }
-#graph, #organic { height:760px; width:100%; display:block; }
+#graph, #organic { height:calc(100vh - 215px); min-height:540px; width:100%; display:block; }
 #organic { cursor:grab; touch-action:none; }
 .legend { padding:10px 22px 16px; display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12.5px; color:var(--muted); }
 .legend span { display:flex; align-items:center; gap:6px; }
@@ -130,7 +133,7 @@ button { font-family:inherit; }
 .faded { opacity:.1; }
 .o-link.faded { opacity:.05; }
 
-.detail { padding:26px 26px 24px; display:flex; flex-direction:column; gap:16px; max-height:calc(100vh - 120px); overflow:auto; }
+.detail { padding:24px 22px 22px; display:flex; flex-direction:column; gap:16px; max-height:calc(100vh - 150px); overflow:auto; position:sticky; top:84px; }
 .detail h2 { margin:0; font-size:26px; line-height:1.15; text-wrap:balance; }
 .detail h3 { margin:0 0 6px; font-size:12.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; }
 .detail p { margin:0; color:var(--ink-2); }
@@ -241,6 +244,7 @@ button.card:hover { border-color:var(--line-strong); }
           <button id="v-orga" aria-pressed="false">Organique</button>
         </div>
         <span class="hint" id="viewhint"></span>
+        <button class="btn-ghost" id="toggle-fiche" type="button" aria-pressed="false">Masquer la fiche</button>
       </div>
       <div id="graph" aria-label="Carte structurée des idées"></div>
       <svg id="organic" aria-label="Carte organique des idées" hidden></svg>
@@ -532,6 +536,14 @@ function demarrer(D) {
     if (v === 'orga') buildOrganic(); else if (cy) { cy.resize(); cy.fit(cy.elements(':visible'), 30); }
     if (state.focus) select(state.focus);
   }
+  document.getElementById('toggle-fiche').onclick = e => {
+    const board = document.getElementById('view-carte');
+    const large = board.classList.toggle('wide');
+    e.currentTarget.textContent = large ? 'Afficher la fiche' : 'Masquer la fiche';
+    e.currentTarget.setAttribute('aria-pressed', large);
+    if (state.view === 'struct' && cy) { cy.resize(); cy.fit(cy.elements(':visible'), 30); } else if (org) buildOrganic();
+  };
+  const ouvrirFiche = () => { const b = document.getElementById('view-carte'); if (b.classList.contains('wide')) document.getElementById('toggle-fiche').click(); };
   document.getElementById('v-struct').onclick = () => setView('struct');
   document.getElementById('v-orga').onclick = () => setView('orga');
 
@@ -649,7 +661,9 @@ function demarrer(D) {
     cy.fit(cy.elements(':visible'), 30);
   }
   function computePositions() {
-    const pos = {}, cellW = 560, cellH = 430, gap = 160, maxRowW = 3600;
+    const g = document.getElementById('graph');
+    const ratio = g && g.clientHeight ? g.clientWidth / g.clientHeight : 1.5;
+    const pos = {}, cellW = 560, cellH = 430, gap = 160, maxRowW = Math.min(8000, Math.max(2400, 3800 * ratio));
     const visibleIdea = id => state.cats.has(ideeById[id].categorie);
     let x0 = 0, y0 = 0, rowH = 0;
     for (const t of Object.values(D.themes)) {
@@ -803,6 +817,7 @@ function demarrer(D) {
   document.addEventListener('click', e => {
     const t = e.target.closest('[data-idee],[data-projet],[data-solution],[data-theme],[data-lien],[data-journal]'); if (!t) return;
     if (document.getElementById('view-carte').hidden) setTab('carte');
+    ouvrirFiche();
     if (t.dataset.solution) { select('s' + t.dataset.solution); showSolution(t.dataset.solution); }
     else if (t.dataset.theme) showTheme(t.dataset.theme);
     else if (t.dataset.lien) showLien(t.dataset.lien);
