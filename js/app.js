@@ -4,6 +4,8 @@ import { demarrer } from './carnet.js';
 import { memoire, activerMemoireLiee } from './memoire.js';
 import { activerValider, enrichirPensees } from './valider.js';
 
+let validerPret = false;
+
 const inline = JSON.parse(document.getElementById('data').textContent.trim() || '{}');
 if (inline.idees) {
   demarrer(preparer(inline));
@@ -54,10 +56,14 @@ if (inline.idees) {
         window.MYBRAIN_API = { sb, D, ...api };
         const tabValider = document.getElementById('tab-valider');
         tabValider.hidden = false;
-        window.ouvrirValider = () => { if (!window.VALIDER_PRET) { activerValider(sb, api); window.VALIDER_PRET = true; } };
+        let enAttente = 0;
+        const afficherCompteur = () => { tabValider.textContent = enAttente > 0 ? `Valider (${enAttente})` : 'Valider'; };
+        const majCompteur = delta => { enAttente = Math.max(0, enAttente + delta); afficherCompteur(); };
+        window.majCompteurValider = majCompteur;
+        window.ouvrirValider = () => { if (!validerPret) { activerValider(sb, api, majCompteur); validerPret = true; } };
         enrichirPensees(sb);
         sb.schema('brain').from('propositions').select('id', { count: 'exact', head: true }).eq('statut', 'en_attente')
-          .then(({ count }) => { if (count) tabValider.textContent = `Valider (${count})`; });
+          .then(({ count, error }) => { if (error) { console.warn('Compteur des propositions :', error); return; } enAttente = count || 0; afficherCompteur(); });
       }
     }
   }
