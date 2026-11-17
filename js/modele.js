@@ -29,9 +29,9 @@ export function preparer(D) {
   D.liens.forEach((l, k) => {
     l.key = 'l' + k;
     l.acts = l.activations ?? [l.cree];
-    l.force = Number(l.force ?? l.poids);
+    l.force = l.force != null && Number.isFinite(+l.force) ? +l.force : Number(l.poids);
     l.last = Math.max(...l.acts.map(a => jIdx[a] ?? 0));
   });
-  D.forces = Object.fromEntries(D.idees.map(i => [i.id, i.force ?? 0]));
+  D.forces = Object.fromEntries(D.idees.map(i => [i.id, Number(i.force) || 0]));
   return D;
 }

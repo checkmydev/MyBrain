@@ -3,7 +3,7 @@ import { chargerDepuisSupabase, preparer } from './modele.js';
 import { demarrer } from './carnet.js';
 import { memoire, activerMemoireLiee } from './memoire.js';
 
-const inline = JSON.parse(document.getElementById('data').textContent || '{}');
+const inline = JSON.parse(document.getElementById('data').textContent.trim() || '{}');
 if (inline.idees) {
   demarrer(preparer(inline));
 } else {
@@ -22,21 +22,35 @@ if (inline.idees) {
       msg.textContent = error ? "Ce compte n'est pas autorisé ou l'envoi a échoué. Vérifie l'adresse." : 'Lien envoyé. Ouvre le mail et clique sur le lien pour te connecter.';
     });
     document.getElementById('logout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
-    const { data } = await sb.auth.getSession();
-    if (!data.session) login.hidden = false;
-    else {
+    let session = null;
+    try {
+      const { data, error } = await sb.auth.getSession();
+      if (error) throw error;
+      session = data.session;
+    } catch (err) {
+      console.error(err);
+      login.hidden = false;
+      msg.textContent = 'Session illisible : reconnecte-toi.';
+    }
+    if (session === null && login.hidden) login.hidden = false;
+    if (session) {
       if (location.hash.includes('access_token')) history.replaceState(null, '', location.pathname);
+      let D = null;
       try {
-        const D = preparer(await chargerDepuisSupabase(sb));
+        D = preparer(await chargerDepuisSupabase(sb));
         if (!D.idees.length) throw new Error('vide');
+      } catch (err) {
+        console.error(err);
+        D = null;
+        login.hidden = false;
+        msg.textContent = "Connecté, mais les données ne sont pas lisibles : ce compte n'est pas propriétaire, ou le réseau n'a pas encore été importé.";
+      }
+      if (D) {
         document.getElementById('logout').hidden = false;
         const api = demarrer(D, { memoireLiee: activerMemoireLiee(sb) });
         document.getElementById('tab-memoire').hidden = false;
         window.ouvrirMemoire = () => memoire(sb);
         window.MYBRAIN_API = { sb, D, ...api };
-      } catch (err) {
-        login.hidden = false;
-        msg.textContent = "Connecté, mais les données ne sont pas lisibles : ce compte n'est pas propriétaire, ou le réseau n'a pas encore été importé.";
       }
     }
   }
