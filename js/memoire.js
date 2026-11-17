@@ -1,14 +1,15 @@
 // memoire.js · recherche par le sens (RAG), mémoire liée aux fiches et onglet Mémoire (site connecté uniquement).
 // ---------- RAG (site connecté uniquement) ----------
 let extracteur = null;
-export async function vectoriserQuestion(q) {
+export async function vectoriser(texte, prefixe = 'query: ') {
   if (!extracteur) {
     const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
     extracteur = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small', { dtype: 'q8' });
   }
-  const out = await extracteur('query: ' + q, { pooling: 'mean', normalize: true });
-  return '[' + Array.from(out.data).map(x => x.toFixed(5)).join(',') + ']';
+  const out = await extracteur(prefixe + texte, { pooling: 'mean', normalize: true });
+  return Array.from(out.data);
 }
+export const vectoriserQuestion = async q => '[' + (await vectoriser(q, 'query: ')).map(x => x.toFixed(5)).join(',') + ']';
 export function activerMemoireLiee(sb) {
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   return async el => {

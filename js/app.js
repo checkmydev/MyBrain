@@ -2,6 +2,7 @@
 import { chargerDepuisSupabase, preparer } from './modele.js';
 import { demarrer } from './carnet.js';
 import { memoire, activerMemoireLiee } from './memoire.js';
+import { activerValider, enrichirPensees } from './valider.js';
 
 const inline = JSON.parse(document.getElementById('data').textContent.trim() || '{}');
 if (inline.idees) {
@@ -51,6 +52,12 @@ if (inline.idees) {
         document.getElementById('tab-memoire').hidden = false;
         window.ouvrirMemoire = () => memoire(sb);
         window.MYBRAIN_API = { sb, D, ...api };
+        const tabValider = document.getElementById('tab-valider');
+        tabValider.hidden = false;
+        window.ouvrirValider = () => { if (!window.VALIDER_PRET) { activerValider(sb, api); window.VALIDER_PRET = true; } };
+        enrichirPensees(sb);
+        sb.schema('brain').from('propositions').select('id', { count: 'exact', head: true }).eq('statut', 'en_attente')
+          .then(({ count }) => { if (count) tabValider.textContent = `Valider (${count})`; });
       }
     }
   }

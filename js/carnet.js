@@ -247,13 +247,14 @@ export function demarrer(D, hooks = {}) {
   }
 
   // ---------- Onglets et vues ----------
-  const TABS = ['carte', 'liste', 'projets', 'pensees', 'memoire'];
+  const TABS = ['carte', 'liste', 'projets', 'pensees', 'valider', 'memoire'];
   function setTab(name) {
     for (const t of TABS) {
       document.getElementById('tab-' + t).setAttribute('aria-selected', t === name);
       document.getElementById('view-' + t).hidden = t !== name;
     }
-    filters.hidden = name !== 'carte' && name !== 'liste';
+    filters.hidden = !['carte', 'liste'].includes(name);
+    if (name === 'valider' && window.ouvrirValider) window.ouvrirValider();
     if (name === 'memoire' && window.ouvrirMemoire) window.ouvrirMemoire();
     if (name === 'carte') { if (state.view === 'struct' && cy) cy.resize(); if (state.view === 'orga' && !org) buildOrganic(); }
   }
